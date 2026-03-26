@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "dotenv": "^17.3.1",
+    "fs-extra": "^11.3.4",
     "input": "^1.0.1",
     "lodash": "^4.17.23",
     "qrcode-terminal": "^0.12.0",

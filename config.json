@@ -1,4 +1,8 @@
 {
-  "TELEGRAM_SOURCE": "https://t.me/owaiseeeeee",
-  "WHATSAPP_GROUP_NAME": "Testing"
+  "TELEGRAM_SOURCES": [
+    "https://t.me/elitepredatorss",
+    "https://t.me/thecradlemedia",
+    "https://t.me/quickupdateindia"
+  ],
+  "WHATSAPP_GROUP_NAME": "Iran-Isreal-War"
 }

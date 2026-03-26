@@ -1,5 +1,6 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const path = require('path');
 
 class WhatsAppService {
     constructor() {
@@ -7,7 +8,17 @@ class WhatsAppService {
             authStrategy: new LocalAuth(),
             puppeteer: {
                 handleSIGINT: false,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                executablePath: process.env.CHROME_PATH || undefined, // Useful for Render
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu'
+                ]
             }
         });
 
@@ -30,12 +41,13 @@ class WhatsAppService {
 
             this.client.on('auth_failure', (msg) => {
                 console.error('WhatsApp authentication failure:', msg);
-                reject(new Error(msg));
+                // Don't reject, let the user try again
             });
 
             this.client.on('disconnected', (reason) => {
                 console.log('WhatsApp client was disconnected:', reason);
                 this.isReady = false;
+                // Auto-reconnect logic could go here, but usually, a restart is safer
             });
 
             this.client.initialize().catch(err => {
@@ -56,20 +68,23 @@ class WhatsAppService {
         }
     }
 
-    async sendMessage(group, message, retries = 1) {
+    async sendMessage(group, context, retries = 1) {
+        const { text, mediaPath, caption } = context;
         try {
-            if (!this.isReady) {
-                console.error('WhatsApp client not ready. Cannot send message.');
-                return false;
+            if (!this.isReady) throw new Error('WhatsApp client not ready');
+
+            if (mediaPath) {
+                const media = MessageMedia.fromFilePath(mediaPath);
+                await group.sendMessage(media, { caption: caption || text });
+            } else {
+                await group.sendMessage(text);
             }
-            await group.sendMessage(message);
             return true;
         } catch (error) {
-            console.error(`Error sending message to WhatsApp (Attempt ${2 - retries}):`, error);
+            console.error(`Error sending to WhatsApp (Attempt ${2 - retries}):`, error.message);
             if (retries > 0) {
-                console.log('Retrying to send message...');
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                return this.sendMessage(group, message, retries - 1);
+                await new Promise(r => setTimeout(r, 2000));
+                return this.sendMessage(group, context, retries - 1);
             }
             return false;
         }

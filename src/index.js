@@ -1,83 +1,114 @@
 require('dotenv').config();
-const fs = require('fs');
+const fs = require('fs-extra');
 const path = require('path');
 const telegramService = require('./services/telegramService');
 const whatsappService = require('./services/whatsappService');
 
-// Load config
+// App Config
 const configPath = path.join(__dirname, '..', 'config.json');
 let config;
 try {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config = fs.readJsonSync(configPath);
 } catch (error) {
-    console.error('Error loading config.json:', error);
+    console.error('Error: Could not load config.json');
     process.exit(1);
 }
 
-const { TELEGRAM_SOURCE, WHATSAPP_GROUP_NAME } = config;
+const { TELEGRAM_SOURCES, WHATSAPP_GROUP_NAME } = config;
+const TEMP_DIR = path.join(__dirname, '..', 'temp');
 
-async function start() {
-    console.log('--- Starting Telegram to WhatsApp Forwarder (User Account) ---');
+// Simple Queue System
+class MessageQueue {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+    }
+
+    push(task) {
+        this.queue.push(task);
+        this.process();
+    }
+
+    async process() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+
+        const task = this.queue.shift();
+        try {
+            await task();
+        } catch (err) {
+            console.error('Task execution error:', err.message);
+        } finally {
+            // Delay between messages (1-2 seconds)
+            const delay = Math.floor(Math.random() * 1000) + 1000;
+            setTimeout(() => {
+                this.processing = false;
+                this.process();
+            }, delay);
+        }
+    }
+}
+
+const queue = new MessageQueue();
+
+async function main() {
+    console.log('--- Production Telegram to WhatsApp Forwarder ---');
+    
+    // Ensure temp dir exists
+    await fs.ensureDir(TEMP_DIR);
 
     try {
-        console.log('Initializing WhatsApp Service...');
+        // Init WhatsApp
         await whatsappService.initialize();
-
-        console.log(`Searching for WhatsApp Group: "${WHATSAPP_GROUP_NAME}"...`);
         const targetGroup = await whatsappService.findGroupByName(WHATSAPP_GROUP_NAME);
-
         if (!targetGroup) {
             console.error(`ERROR: WhatsApp Group "${WHATSAPP_GROUP_NAME}" not found.`);
             process.exit(1);
         }
-        console.log(`WhatsApp Group Found!`);
 
-        // Initialize Telegram (Direct User Account)
-        console.log('Initializing Telegram User Account...');
-        const telegramInitialized = await telegramService.initialize(
+        // Init Telegram
+        const telegramOk = await telegramService.initialize(
             process.env.TELEGRAM_API_ID,
             process.env.TELEGRAM_API_HASH
         );
+        if (!telegramOk) process.exit(1);
 
-        if (!telegramInitialized) {
-            console.error('Failed to initialize Telegram Service.');
-            process.exit(1);
-        }
+        // Bridge Logic
+        await telegramService.setupListeners(TELEGRAM_SOURCES, async (msgData) => {
+            const { senderName, text, mediaPath, id } = msgData;
 
-        // Setup message forwarding logic
-        await telegramService.setupListeners(TELEGRAM_SOURCE, async (senderName, text, messageId) => {
-            if (!text) return;
+            queue.push(async () => {
+                console.log(`[Queue] Processing message ${id} from ${senderName}...`);
+                
+                const caption = `[Telegram News]\nSender: ${senderName}\n\n${text}`;
+                
+                try {
+                    const success = await whatsappService.sendMessage(targetGroup, {
+                        text: caption,
+                        mediaPath: mediaPath,
+                        caption: caption
+                    });
 
-            const forwardText = `[Telegram News]\nSender: ${senderName}\n\n${text}`;
-
-            console.log(`[Forwarder] New message (ID: ${messageId}) from ${senderName}.`);
-
-            const delay = Math.floor(Math.random() * 1000) + 1000;
-            console.log(`[Forwarder] Waiting ${delay}ms before sending to WhatsApp...`);
-
-            await new Promise(resolve => setTimeout(resolve, delay));
-
-            const success = await whatsappService.sendMessage(targetGroup, forwardText);
-
-            if (success) {
-                console.log(`[Forwarder] Message successfully forwarded!`);
-            } else {
-                console.error(`[Forwarder] FAILED to forward message.`);
-            }
+                    if (success) {
+                        console.log(`[Forwarder] Success: Forwarded message ${id}`);
+                    } else {
+                        console.error(`[Forwarder] Failure: Could not forward message ${id}`);
+                    }
+                } finally {
+                    // Always clean up media files
+                    if (mediaPath && fs.existsSync(mediaPath)) {
+                        await fs.remove(mediaPath);
+                        console.log(`[Forwarder] Cleaned up temp file: ${path.basename(mediaPath)}`);
+                    }
+                }
+            });
         });
 
-        console.log('\nApp is running continuously.');
-        console.log(`Listening to Telegram source: ${TELEGRAM_SOURCE}`);
-        console.log(`Forwarding to WhatsApp: ${WHATSAPP_GROUP_NAME}`);
-
-    } catch (error) {
-        console.error('Critical initialization error:', error);
+        console.log('\nForwarder is active and running.');
+    } catch (err) {
+        console.error('Initialization Error:', err.message);
         process.exit(1);
     }
 }
 
-process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
-});
-
-start();
+main();

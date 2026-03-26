@@ -219,7 +219,8 @@ async function startForwarder() {
             const { senderName, text, mediaPath, id } = msgData;
 
             queue.push(async () => {
-                addLog(`Processing message ${id} from ${senderName}...`);
+                const previewText = text ? (text.substring(0, 50) + (text.length > 50 ? '...' : '')) : '[Media/No Text]';
+                addLog(`Processing message ${id} from ${senderName}: "${previewText}"`);
 
                 const caption = `[Telegram News]\nSender: ${senderName}\n\n${text}`;
 

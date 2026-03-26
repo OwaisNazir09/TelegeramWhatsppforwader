@@ -1,0 +1,40 @@
+<div class="auth-page">
+    <div class="auth-card">
+        <h2>📱 WhatsApp QR Code</h2>
+        <p class="auth-description">Scan this QR code with your WhatsApp app to connect.</p>
+        
+        <div class="qr-container" id="qrContainer">
+            {{#if qrDataUrl}}
+                <img src="{{qrDataUrl}}" alt="WhatsApp QR Code" class="qr-image" />
+                <p class="qr-hint">Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+            {{else if connected}}
+                <div class="success-state">
+                    <span class="success-icon">✅</span>
+                    <h3>WhatsApp Connected!</h3>
+                    <p>Your WhatsApp account is linked successfully.</p>
+                    <a href="/" class="btn btn-primary">Back to Dashboard</a>
+                </div>
+            {{else}}
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Generating QR Code...</p>
+                    <p class="hint">This page will auto-refresh when the QR is ready.</p>
+                </div>
+            {{/if}}
+        </div>
+
+        {{#unless connected}}
+            <div class="auth-actions">
+                <a href="/whatsapp" class="btn btn-secondary">🔄 Refresh QR</a>
+                <a href="/" class="btn btn-ghost">← Back to Dashboard</a>
+            </div>
+        {{/unless}}
+    </div>
+</div>
+
+{{#unless connected}}
+<script>
+    // Auto-refresh every 5 seconds to check for new QR or connection
+    setTimeout(() => location.reload(), 5000);
+</script>
+{{/unless}}

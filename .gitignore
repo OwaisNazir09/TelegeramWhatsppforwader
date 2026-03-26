@@ -3,10 +3,13 @@ node_modules/
 
 # Environment Variables
 .env
+.env.local
+.env.production
 
-# Sessions (Sensitive)
+# Sessions (Sensitive - NEVER commit these)
 session.txt
 .wwebjs_auth/
+.wwebjs_cache/
 
 # Temporary Files
 temp/
@@ -20,3 +23,7 @@ yarn-error.log*
 # OS Files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/

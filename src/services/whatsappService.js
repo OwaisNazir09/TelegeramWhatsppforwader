@@ -1,14 +1,21 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
 const path = require('path');
 
 class WhatsAppService {
     constructor() {
+        this.client = null;
+        this.isReady = false;
+        this.latestQrDataUrl = null;
+        this.initializing = false;
+    }
+
+    _createClient() {
         this.client = new Client({
             authStrategy: new LocalAuth(),
             puppeteer: {
                 handleSIGINT: false,
-                executablePath: process.env.CHROME_PATH || undefined, // Useful for Render
+                executablePath: process.env.CHROME_PATH || undefined,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -21,40 +28,52 @@ class WhatsAppService {
                 ]
             }
         });
-
-        this.isReady = false;
     }
 
     async initialize() {
-        return new Promise((resolve, reject) => {
-            this.client.on('qr', (qr) => {
-                console.log('--- WHATSAPP QR CODE ---');
-                qrcode.generate(qr, { small: true });
-                console.log('Scan the QR code above to login to WhatsApp.');
-            });
+        if (this.initializing || this.isReady) return;
+        this.initializing = true;
+        this.latestQrDataUrl = null;
 
-            this.client.on('ready', () => {
-                console.log('WhatsApp client is ready!');
-                this.isReady = true;
-                resolve();
-            });
+        this._createClient();
 
-            this.client.on('auth_failure', (msg) => {
-                console.error('WhatsApp authentication failure:', msg);
-                // Don't reject, let the user try again
-            });
-
-            this.client.on('disconnected', (reason) => {
-                console.log('WhatsApp client was disconnected:', reason);
-                this.isReady = false;
-                // Auto-reconnect logic could go here, but usually, a restart is safer
-            });
-
-            this.client.initialize().catch(err => {
-                console.error('Failed to initialize WhatsApp client:', err);
-                reject(err);
-            });
+        this.client.on('qr', async (qr) => {
+            console.log('[WhatsApp] New QR code generated');
+            try {
+                this.latestQrDataUrl = await qrcode.toDataURL(qr, {
+                    width: 280,
+                    margin: 2,
+                    color: { dark: '#000000', light: '#ffffff' }
+                });
+            } catch (err) {
+                console.error('[WhatsApp] QR generation error:', err.message);
+            }
         });
+
+        this.client.on('ready', () => {
+            console.log('[WhatsApp] Client is ready!');
+            this.isReady = true;
+            this.latestQrDataUrl = null;
+            this.initializing = false;
+        });
+
+        this.client.on('auth_failure', (msg) => {
+            console.error('[WhatsApp] Authentication failure:', msg);
+        });
+
+        this.client.on('disconnected', (reason) => {
+            console.log('[WhatsApp] Disconnected:', reason);
+            this.isReady = false;
+            this.initializing = false;
+        });
+
+        try {
+            await this.client.initialize();
+        } catch (err) {
+            console.error('[WhatsApp] Failed to initialize:', err.message);
+            this.initializing = false;
+            throw err;
+        }
     }
 
     async findGroupByName(groupName) {
@@ -63,7 +82,7 @@ class WhatsAppService {
             const group = chats.find(chat => chat.isGroup && chat.name === groupName);
             return group;
         } catch (error) {
-            console.error('Error finding WhatsApp group:', error);
+            console.error('[WhatsApp] Error finding group:', error);
             return null;
         }
     }
@@ -81,7 +100,7 @@ class WhatsAppService {
             }
             return true;
         } catch (error) {
-            console.error(`Error sending to WhatsApp (Attempt ${2 - retries}):`, error.message);
+            console.error(`[WhatsApp] Send error (Attempt ${2 - retries}):`, error.message);
             if (retries > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 return this.sendMessage(group, context, retries - 1);

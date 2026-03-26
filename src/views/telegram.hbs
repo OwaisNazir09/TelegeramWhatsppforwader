@@ -1,0 +1,54 @@
+<div class="auth-page">
+    <div class="auth-card">
+        <h2>✈️ Telegram Authentication</h2>
+
+        {{#if connected}}
+            <div class="success-state">
+                <span class="success-icon">✅</span>
+                <h3>Telegram Connected!</h3>
+                <p>Your Telegram account is authenticated successfully.</p>
+                <a href="/" class="btn btn-primary">Back to Dashboard</a>
+            </div>
+        {{else if waitingForCode}}
+            <p class="auth-description">An OTP code has been sent to your Telegram app. Enter it below.</p>
+            <form action="/telegram/code" method="POST" class="auth-form">
+                <div class="form-group">
+                    <label for="code">OTP Code</label>
+                    <input type="text" id="code" name="code" placeholder="Enter the code from Telegram" 
+                           class="form-input" autocomplete="off" autofocus required />
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Verify Code</button>
+            </form>
+        {{else if waitingForPassword}}
+            <p class="auth-description">Your account has 2FA enabled. Enter your password.</p>
+            <form action="/telegram/password" method="POST" class="auth-form">
+                <div class="form-group">
+                    <label for="password">2FA Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter your 2FA password" 
+                           class="form-input" autofocus required />
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Submit Password</button>
+            </form>
+        {{else}}
+            <p class="auth-description">Enter your phone number to start Telegram authentication.</p>
+            {{#if error}}
+                <div class="alert alert-error">⚠️ {{error}}</div>
+            {{/if}}
+            <form action="/telegram/phone" method="POST" class="auth-form">
+                <div class="form-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="+1234567890" 
+                           class="form-input" autofocus required />
+                    <small class="form-hint">Include country code (e.g., +91 for India)</small>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Send OTP</button>
+            </form>
+        {{/if}}
+
+        {{#unless connected}}
+            <div class="auth-actions">
+                <a href="/" class="btn btn-ghost">← Back to Dashboard</a>
+            </div>
+        {{/unless}}
+    </div>
+</div>

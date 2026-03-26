@@ -1,0 +1,91 @@
+<div class="dashboard">
+    <!-- Status Cards -->
+    <div class="status-cards">
+        <div class="card {{#if whatsappReady}}card-success{{else}}card-warning{{/if}}">
+            <div class="card-icon">💬</div>
+            <div class="card-info">
+                <h3>WhatsApp</h3>
+                <p>{{#if whatsappReady}}Connected{{else}}Not Connected{{/if}}</p>
+            </div>
+        </div>
+        <div class="card {{#if telegramReady}}card-success{{else}}card-warning{{/if}}">
+            <div class="card-icon">✈️</div>
+            <div class="card-info">
+                <h3>Telegram</h3>
+                <p>{{#if telegramReady}}Connected{{else}}Not Connected{{/if}}</p>
+            </div>
+        </div>
+        <div class="card card-info-style">
+            <div class="card-icon">🔄</div>
+            <div class="card-info">
+                <h3>Forwarder</h3>
+                <p>{{#if forwarderActive}}Active{{else}}Inactive{{/if}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Steps -->
+    <div class="steps-container">
+        <h2 class="section-title">Setup Steps</h2>
+
+        <div class="step {{#if whatsappReady}}step-done{{else}}step-active{{/if}}">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Connect WhatsApp</h3>
+                {{#if whatsappReady}}
+                <p class="step-status success"> WhatsApp is connected and ready</p>
+                {{else}}
+                <p>Scan the QR code to connect your WhatsApp account.</p>
+                <a href="/whatsapp" class="btn btn-primary">Open QR Scanner</a>
+                {{/if}}
+            </div>
+        </div>
+
+        <div class="step {{#if telegramReady}}step-done{{else if whatsappReady}}step-active{{else}}step-pending{{/if}}">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>Connect Telegram</h3>
+                {{#if telegramReady}}
+                <p class="step-status success">Telegram is connected and ready</p>
+                {{else if whatsappReady}}
+                <p>Authenticate your Telegram account.</p>
+                <a href="/telegram" class="btn btn-primary">Start Telegram Auth</a>
+                {{else}}
+                <p class="step-status pending">Complete Step 1 first</p>
+                {{/if}}
+            </div>
+        </div>
+
+        <div
+            class="step {{#if forwarderActive}}step-done{{else if telegramReady}}step-active{{else}}step-pending{{/if}}">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Start Forwarder</h3>
+                {{#if forwarderActive}}
+                <p class="step-status success">✅ Forwarder is running</p>
+                {{else if telegramReady}}
+                <a href="/start" class="btn btn-primary">Start Forwarding</a>
+                {{else}}
+                <p class="step-status pending">Complete Steps 1 & 2 first</p>
+                {{/if}}
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="logs-container">
+        <h2 class="section-title">Recent Logs</h2>
+        <div class="log-box" id="logBox">
+            {{#each logs}}
+            <div class="log-entry">{{this}}</div>
+            {{else}}
+            <div class="log-entry log-empty">No logs yet. Start the services above.</div>
+            {{/each}}
+        </div>
+    </div>
+</div>
+
+<script>
+    // Auto-refresh every 10 seconds
+    setTimeout(() => location.reload(), 10000);
+</script>

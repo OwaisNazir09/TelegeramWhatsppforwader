@@ -1,10 +1,14 @@
 require('dotenv').config();
-const fs = require('fs-extra');
+const express = require('express');
+const { engine } = require('express-handlebars');
 const path = require('path');
+const fs = require('fs-extra');
+const http = require('http');
+
 const telegramService = require('./services/telegramService');
 const whatsappService = require('./services/whatsappService');
 
-// App Config
+// ============ CONFIG ============
 const configPath = path.join(__dirname, '..', 'config.json');
 let config;
 try {
@@ -16,8 +20,17 @@ try {
 
 const { TELEGRAM_SOURCES, WHATSAPP_GROUP_NAME } = config;
 const TEMP_DIR = path.join(__dirname, '..', 'temp');
+const PORT = process.env.PORT || 3000;
 
-// Simple Queue System
+const logs = [];
+function addLog(msg) {
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = `[${timestamp}] ${msg}`;
+    logs.unshift(entry);
+    if (logs.length > 50) logs.pop();
+    console.log(entry);
+}
+
 class MessageQueue {
     constructor() {
         this.queue = [];
@@ -37,9 +50,8 @@ class MessageQueue {
         try {
             await task();
         } catch (err) {
-            console.error('Task execution error:', err.message);
+            addLog(`Task error: ${err.message}`);
         } finally {
-            // Delay between messages (1-2 seconds)
             const delay = Math.floor(Math.random() * 1000) + 1000;
             setTimeout(() => {
                 this.processing = false;
@@ -50,65 +62,232 @@ class MessageQueue {
 }
 
 const queue = new MessageQueue();
+let forwarderActive = false;
 
-async function main() {
-    console.log('--- Production Telegram to WhatsApp Forwarder ---');
-    
-    // Ensure temp dir exists
-    await fs.ensureDir(TEMP_DIR);
+// ============ EXPRESS APP ============
+const app = express();
+
+// Body parsing
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.engine('hbs', engine({
+    extname: '.hbs',
+    defaultLayout: 'layout',
+    layoutsDir: path.join(__dirname, 'views'),
+    partialsDir: path.join(__dirname, 'views'),
+}));
+app.set('view engine', 'hbs');
+app.set('views', path.join(__dirname, 'views'));
+
+// ============ ROUTES ============
+
+// Dashboard
+app.get('/', (req, res) => {
+    res.render('dashboard', {
+        title: 'Dashboard',
+        whatsappReady: whatsappService.isReady,
+        telegramReady: telegramService.isConnected,
+        forwarderActive,
+        logs: logs.slice(0, 20),
+        layout: 'layout',
+    });
+});
+
+// WhatsApp QR Page
+app.get('/whatsapp', async (req, res) => {
+    // Start WhatsApp initialization if not already running
+    if (!whatsappService.isReady && !whatsappService.initializing) {
+        addLog('Starting WhatsApp client...');
+        whatsappService.initialize().catch(err => {
+            addLog(`WhatsApp init error: ${err.message}`);
+        });
+    }
+
+    res.render('whatsapp', {
+        title: 'WhatsApp Setup',
+        qrDataUrl: whatsappService.latestQrDataUrl,
+        connected: whatsappService.isReady,
+        layout: 'layout',
+    });
+});
+
+// Telegram Auth Page
+app.get('/telegram', async (req, res) => {
+    // Initialize telegram client if not done
+    if (!telegramService.client) {
+        try {
+            await telegramService.initialize(
+                process.env.TELEGRAM_API_ID,
+                process.env.TELEGRAM_API_HASH
+            );
+        } catch (err) {
+            addLog(`Telegram init error: ${err.message}`);
+        }
+    }
+
+    res.render('telegram', {
+        title: 'Telegram Setup',
+        connected: telegramService.isConnected,
+        waitingForCode: telegramService.authState === 'waitingForCode',
+        waitingForPassword: telegramService.authState === 'waitingForPassword',
+        error: telegramService.authError,
+        layout: 'layout',
+    });
+});
+
+// Telegram: Submit Phone Number
+app.post('/telegram/phone', async (req, res) => {
+    const { phone } = req.body;
+    if (!phone) {
+        return res.render('telegram', {
+            title: 'Telegram Setup',
+            error: 'Phone number is required.',
+            layout: 'layout',
+        });
+    }
+
+    addLog(`Telegram: Starting auth for ${phone}`);
+
+    // Start auth in background (don't await — it will block until code/password)
+    telegramService.startPhoneAuth(phone).then(success => {
+        if (success) {
+            addLog('Telegram: Authentication successful!');
+        } else {
+            addLog(`Telegram: Authentication failed — ${telegramService.authError}`);
+        }
+    });
+
+    // Wait a moment for the auth state to transition
+    await new Promise(r => setTimeout(r, 3000));
+
+    res.redirect('/telegram');
+});
+
+// Telegram: Submit OTP Code
+app.post('/telegram/code', async (req, res) => {
+    const { code } = req.body;
+    if (code) {
+        addLog('Telegram: OTP code submitted');
+        telegramService.submitCode(code);
+    }
+
+    // Wait for auth to process
+    await new Promise(r => setTimeout(r, 3000));
+
+    res.redirect('/telegram');
+});
+
+// Telegram: Submit 2FA Password
+app.post('/telegram/password', async (req, res) => {
+    const { password } = req.body;
+    if (password) {
+        addLog('Telegram: 2FA password submitted');
+        telegramService.submitPassword(password);
+    }
+
+    // Wait for auth to process
+    await new Promise(r => setTimeout(r, 3000));
+
+    res.redirect('/telegram');
+});
+
+// Start Forwarder
+app.get('/start', async (req, res) => {
+    if (forwarderActive) {
+        return res.redirect('/');
+    }
 
     try {
-        // Init WhatsApp
-        await whatsappService.initialize();
+        await fs.ensureDir(TEMP_DIR);
+
         const targetGroup = await whatsappService.findGroupByName(WHATSAPP_GROUP_NAME);
         if (!targetGroup) {
-            console.error(`ERROR: WhatsApp Group "${WHATSAPP_GROUP_NAME}" not found.`);
-            process.exit(1);
+            addLog(`ERROR: WhatsApp group "${WHATSAPP_GROUP_NAME}" not found.`);
+            return res.redirect('/');
         }
 
-        // Init Telegram
-        const telegramOk = await telegramService.initialize(
-            process.env.TELEGRAM_API_ID,
-            process.env.TELEGRAM_API_HASH
-        );
-        if (!telegramOk) process.exit(1);
+        addLog(`Found WhatsApp group: ${WHATSAPP_GROUP_NAME}`);
 
-        // Bridge Logic
+        // Set up Telegram listeners
         await telegramService.setupListeners(TELEGRAM_SOURCES, async (msgData) => {
             const { senderName, text, mediaPath, id } = msgData;
 
             queue.push(async () => {
-                console.log(`[Queue] Processing message ${id} from ${senderName}...`);
-                
+                addLog(`Processing message ${id} from ${senderName}...`);
+
                 const caption = `[Telegram News]\nSender: ${senderName}\n\n${text}`;
-                
+
                 try {
                     const success = await whatsappService.sendMessage(targetGroup, {
                         text: caption,
-                        mediaPath: mediaPath,
-                        caption: caption
+                        mediaPath,
+                        caption,
                     });
 
                     if (success) {
-                        console.log(`[Forwarder] Success: Forwarded message ${id}`);
+                        addLog(`✅ Forwarded message ${id}`);
                     } else {
-                        console.error(`[Forwarder] Failure: Could not forward message ${id}`);
+                        addLog(`❌ Failed to forward message ${id}`);
                     }
                 } finally {
-                    // Always clean up media files
                     if (mediaPath && fs.existsSync(mediaPath)) {
                         await fs.remove(mediaPath);
-                        console.log(`[Forwarder] Cleaned up temp file: ${path.basename(mediaPath)}`);
                     }
                 }
             });
         });
 
-        console.log('\nForwarder is active and running.');
+        forwarderActive = true;
+        addLog('🚀 Forwarder is now active!');
     } catch (err) {
-        console.error('Initialization Error:', err.message);
-        process.exit(1);
+        addLog(`Start error: ${err.message}`);
     }
+
+    res.redirect('/');
+});
+
+// Health check endpoint (for cron ping)
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime(),
+        whatsapp: whatsappService.isReady,
+        telegram: telegramService.isConnected,
+        forwarder: forwarderActive,
+    });
+});
+
+// ============ CRON: SELF-PING TO KEEP SERVER ALIVE ============
+function startSelfPing() {
+    const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+
+    if (!RENDER_URL) {
+        console.log('[Cron] No RENDER_EXTERNAL_URL or APP_URL set. Self-ping disabled.');
+        console.log('[Cron] Set RENDER_EXTERNAL_URL in Render environment variables to enable.');
+        return;
+    }
+
+    const pingUrl = `${RENDER_URL}/health`;
+    const INTERVAL = 14 * 60 * 1000; // Every 14 minutes
+
+    setInterval(() => {
+        const protocol = pingUrl.startsWith('https') ? require('https') : http;
+        protocol.get(pingUrl, (res) => {
+            addLog(`[Cron] Self-ping OK (status: ${res.statusCode})`);
+        }).on('error', (err) => {
+            addLog(`[Cron] Self-ping failed: ${err.message}`);
+        });
+    }, INTERVAL);
+
+    addLog(`[Cron] Self-ping enabled — pinging ${pingUrl} every 14 minutes`);
 }
 
-main();
+// ============ START SERVER ============
+app.listen(PORT, () => {
+    console.log(`\n🌐 Dashboard running at http://localhost:${PORT}`);
+    console.log('Open this URL in your browser to set up WhatsApp & Telegram.\n');
+    addLog('Server started');
+    startSelfPing();
+});

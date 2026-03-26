@@ -51,7 +51,15 @@ class WhatsAppService {
                         '--no-first-run',
                         '--no-zygote',
                         '--single-process',
-                        '--disable-gpu'
+                        '--disable-gpu',
+                        '--disable-extensions',
+                        '--disable-default-apps',
+                        '--disable-setuid-sandbox',
+                        '--no-default-browser-check',
+                        '--disable-web-security',
+                        '--disable-features=IsolateOrigins,site-per-process',
+                        '--disable-site-isolation-trials',
+                        '--window-size=200,200' 
                     ]
                 }
             });

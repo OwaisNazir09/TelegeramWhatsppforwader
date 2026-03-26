@@ -1,13 +1,20 @@
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { NewMessage } = require('telegram/events');
+const mongoose = require('mongoose');
 const fs = require('fs-extra');
 const path = require('path');
+
+// MongoDB schema for Telegram session
+const telegramSessionSchema = new mongoose.Schema({
+    id: { type: String, default: 'main' },
+    session: String
+});
+const TelegramSession = mongoose.models.TelegramSession || mongoose.model('TelegramSession', telegramSessionSchema);
 
 class TelegramService {
     constructor() {
         this.client = null;
-        this.sessionFilePath = path.join(__dirname, '..', '..', 'session.txt');
         this.tempDir = path.join(__dirname, '..', '..', 'temp');
         this.lastMessageId = null;
 
@@ -20,15 +27,32 @@ class TelegramService {
         this._resolvePassword = null;
     }
 
+    async _connectMongo() {
+        if (mongoose.connection.readyState === 1) return;
+        try {
+            await mongoose.connect(process.env.MONGODB_URI);
+        } catch (err) {
+            console.error('[Telegram] MongoDB connection error:', err.message);
+        }
+    }
+
     async initialize(apiId, apiHash) {
         if (!apiId || !apiHash) {
             console.error('[Telegram] ERROR: API_ID or API_HASH missing.');
             return false;
         }
 
+        await this._connectMongo();
+
         let sessionString = '';
-        if (fs.existsSync(this.sessionFilePath)) {
-            sessionString = fs.readFileSync(this.sessionFilePath, 'utf8').trim();
+        try {
+            const savedSession = await TelegramSession.findOne({ id: 'main' });
+            if (savedSession) {
+                sessionString = savedSession.session;
+                console.log('[Telegram] Saved session found in MongoDB.');
+            }
+        } catch (err) {
+            console.error('[Telegram] Error loading session from MongoDB:', err.message);
         }
 
         const stringSession = new StringSession(sessionString);
@@ -59,10 +83,6 @@ class TelegramService {
         return true;
     }
 
-    /**
-     * Start the phone login flow (called from web route).
-     * Returns a promise that resolves when fully authenticated.
-     */
     async startPhoneAuth(phoneNumber) {
         if (!this.client) throw new Error('Telegram client not initialized');
 
@@ -91,10 +111,15 @@ class TelegramService {
                 },
             });
 
-            // Save new session
+            // Save new session to MongoDB
             const newSession = this.client.session.save();
-            fs.writeFileSync(this.sessionFilePath, newSession, 'utf8');
-            console.log('[Telegram] Session authenticated and saved.');
+            await TelegramSession.findOneAndUpdate(
+                { id: 'main' },
+                { session: newSession },
+                { upsert: true }
+            );
+            
+            console.log('[Telegram] Session authenticated and saved to MongoDB.');
             this.isConnected = true;
             this.authState = 'done';
             return true;
@@ -106,9 +131,6 @@ class TelegramService {
         }
     }
 
-    /**
-     * Submit the OTP code (called from web route).
-     */
     submitCode(code) {
         if (this._resolveCode) {
             this._resolveCode(code);
@@ -116,9 +138,6 @@ class TelegramService {
         }
     }
 
-    /**
-     * Submit the 2FA password (called from web route).
-     */
     submitPassword(password) {
         if (this._resolvePassword) {
             this._resolvePassword(password);

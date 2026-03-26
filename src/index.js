@@ -305,10 +305,10 @@ app.get('/health', (req, res) => {
 app.listen(PORT, async () => {
     console.log(`\n🌐 Dashboard running at http://localhost:${PORT}`);
     console.log('Open this URL in your browser to set up WhatsApp & Telegram.\n');
-    addLog('Server started');
+    addLog('Server started - checking for existing sessions...');
 
     // Auto-initialize services on startup
-    addLog('Auto-initializing services...');
+    addLog('Searching for saved sessions in MongoDB...');
     
     // Initialize WhatsApp
     whatsappService.initialize().catch(err => {

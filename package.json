@@ -12,8 +12,10 @@
   "description": "",
   "dependencies": {
     "dotenv": "^17.3.1",
+    "input": "^1.0.1",
+    "lodash": "^4.17.23",
     "qrcode-terminal": "^0.12.0",
-    "telegraf": "^4.16.3",
+    "telegram": "^2.26.22",
     "whatsapp-web.js": "^1.34.6"
   }
 }

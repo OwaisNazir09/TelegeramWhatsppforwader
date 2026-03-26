@@ -1,64 +1,71 @@
-# Telegram to WhatsApp Forwarder
+# Telegram to WhatsApp Forwarder (User Account)
 
-A Node.js application that automatically forwards messages from a specific Telegram group to a designated WhatsApp group.
+Automatically forward messages from any Telegram source (channel or group) to a WhatsApp group using your own Telegram user account.
 
 ## Features
-- **Telegram Integration:** Listens for text messages in a specific group.
-- **WhatsApp Integration:** Sends messages to a target group using `whatsapp-web.js`.
-- **Sender Identification:** Includes the Telegram sender's name in the WhatsApp message.
-- **Spam Prevention:** Adds a 1-2 second random delay between forwards.
-- **Modular Design:** Separate services for Telegram and WhatsApp.
-- **Configuration:** Uses `.env` for secrets and `config.json` for IDs/Names.
+- **User Account Integration:** Uses `gramjs` to connect as a real user (not a bot).
+- **Session Persistence:** Login once with OTP; your session is saved locally in `session.txt`.
+- **WhatsApp Integration:** Uses `whatsapp-web.js` for reliable messaging.
+- **De-duplication:** Prevents multiple forwards of the same message.
+- **Spam Control:** Randomized 1-2 second delay between messages.
+- **Modular Code:** Easy to maintain and extend.
 
-## Requirements
-- Node.js (v16 or higher)
-- A Telegram Bot Token (from [@BotFather](https://t.me/botfather))
-- WhatsApp account for QR code login
+## Prerequisites
+- Node.js (v16+)
+- **Telegram API Credentials:** You must get these from [my.telegram.org](https://my.telegram.org):
+  1. Log in with your phone number.
+  2. Go to "API development tools".
+  3. Create a new application (use any name).
+  4. Save the `App api_id` and `App api_hash`.
 
-## Setup Instructions
+## Installation
 
-### 1. Telegram Bot Setup
-1. Message [@BotFather](https://t.me/botfather) and create a new bot.
-2. Save the **API Token**.
-3. Add the bot to your Telegram group.
-4. **IMPORTANT:** Give the bot "Admin" rights or disable "Bot Privacy Mode" via BotFather (/setprivacy -> Disable) so it can read group messages.
-5. Get your **Telegram Group ID**:
-   - You can send `/id` to the bot in the group once the app is running (it will log the ID to the console).
+1.  **Clone/Extract** the project files.
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
 
-### 2. Installation
-1. Clone or download this repository.
-2. Open a terminal in the project folder.
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
+## Configuration
 
-### 3. Configuration
-1. Rename/edit the `.env` file and add your Telegram token:
-   ```env
-   TELEGRAM_BOT_TOKEN=123456789:ABCDefghIJKLmnopQRSTuvwxYZ
-   ```
-2. Edit `config.json` with your group details:
-   ```json
-   {
-     "TELEGRAM_GROUP_ID": "-1001234567890",
-     "WHATSAPP_GROUP_NAME": "My WhatsApp Group Name"
-   }
-   ```
-   *Note: Ensure the WhatsApp group name matches exactly.*
+### 1. Environment Variables (`.env`)
+Create/Edit the `.env` file in the root directory:
+```env
+TELEGRAM_API_ID=your_api_id_from_telegram
+TELEGRAM_API_HASH=your_api_hash_from_telegram
+```
 
-### 4. Running the App
-1. Start the application:
-   ```bash
-   node src/index.js
-   ```
-2. A **QR Code** will appear in the terminal. Scan it with your WhatsApp mobile app (Linked Devices).
-3. Once "WhatsApp client is ready!" appears, the bot will start forwarding messages.
+### 2. Application Config (`config.json`)
+Edit the `config.json` file:
+```json
+{
+  "TELEGRAM_SOURCE": "telegram_channel_username_or_id",
+  "WHATSAPP_GROUP_NAME": "Exact WhatsApp Group Name"
+}
+```
+*Note: `TELEGRAM_SOURCE` can be a username (e.g., `telegramnews`) or a numeric ID (e.g., `-100123456789`).*
 
-## Debugging & Error Handling
-- **Group ID:** If you don't know your Telegram Group ID, send anything in the group. The console will log `Ignoring message from chat ...`. That "..." is your group ID.
-- **WhatsApp Ready:** If the "WhatsApp Group Found!" message doesn't appear, ensure you are a member of the group and the name matches exactly.
-- **Retry:** If the connection drops, the app will log the disconnection. You may need to restart the app to re-initialize.
+## Running the App
+
+1.  **Start the application**:
+    ```bash
+    npm start
+    ```
+
+2.  **Initial Setup (First Time Only)**:
+    - **Telegram Login**:
+      - Enter your phone number (e.g., `+1234567890`).
+      - Enter the OTP code received in your Telegram app.
+      - (Optional) Enter your 2FA password if enabled.
+    - **WhatsApp Login**:
+      - Scan the QR code that appears in the terminal using your WhatsApp mobile app (Linked Devices).
+
+3.  **Success**: Once "WhatsApp client is ready!" and "Telegram client is online" appear, the app will monitor the source and forward messages.
+
+## Error Handling
+- **Disconnection**: The app handles connection retries for Telegram.
+- **WhatsApp Failure**: If a message fails to send to WhatsApp, it will retry once automatically.
+- **Session**: If you want to log in with a different account, delete the `session.txt` file.
 
 ## Disclaimer
-This project uses `whatsapp-web.js`, which is an unofficial library. Use it responsibly to avoid account bans. Avoid forwarding excessive messages in a short period.
+This tool is for personal use and automation. Use it responsibly and respect Telegram/WhatsApp terms of service to avoid account restrictions.

@@ -56,7 +56,7 @@ class WhatsAppService {
         }
     }
 
-    async sendMessage(group, message) {
+    async sendMessage(group, message, retries = 1) {
         try {
             if (!this.isReady) {
                 console.error('WhatsApp client not ready. Cannot send message.');
@@ -65,7 +65,12 @@ class WhatsAppService {
             await group.sendMessage(message);
             return true;
         } catch (error) {
-            console.error('Error sending message to WhatsApp:', error);
+            console.error(`Error sending message to WhatsApp (Attempt ${2 - retries}):`, error);
+            if (retries > 0) {
+                console.log('Retrying to send message...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                return this.sendMessage(group, message, retries - 1);
+            }
             return false;
         }
     }

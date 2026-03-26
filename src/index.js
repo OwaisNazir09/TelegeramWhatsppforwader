@@ -193,10 +193,14 @@ app.post('/telegram/password', async (req, res) => {
     res.redirect('/telegram');
 });
 
-// Start Forwarder
-app.get('/start', async (req, res) => {
-    if (forwarderActive) {
-        return res.redirect('/');
+// Start Forwarder Function
+async function startForwarder() {
+    if (forwarderActive) return;
+
+    // Check if both services are ready
+    if (!whatsappService.isReady || !telegramService.isConnected) {
+        addLog('Attempted to start forwarder, but services are not ready yet...');
+        return;
     }
 
     try {
@@ -204,8 +208,8 @@ app.get('/start', async (req, res) => {
 
         const targetGroup = await whatsappService.findGroupByName(WHATSAPP_GROUP_NAME);
         if (!targetGroup) {
-            addLog(`ERROR: WhatsApp group "${WHATSAPP_GROUP_NAME}" not found.`);
-            return res.redirect('/');
+            addLog(`ERROR: WhatsApp group "${WHATSAPP_GROUP_NAME}" not found. Verify the name in config.json.`);
+            return;
         }
 
         addLog(`Found WhatsApp group: ${WHATSAPP_GROUP_NAME}`);
@@ -244,20 +248,7 @@ app.get('/start', async (req, res) => {
     } catch (err) {
         addLog(`Start error: ${err.message}`);
     }
-
-    res.redirect('/');
-});
-
-// Health check endpoint (for cron ping)
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        uptime: process.uptime(),
-        whatsapp: whatsappService.isReady,
-        telegram: telegramService.isConnected,
-        forwarder: forwarderActive,
-    });
-});
+}
 
 // ============ CRON: SELF-PING TO KEEP SERVER ALIVE ============
 function startSelfPing() {
@@ -279,10 +270,36 @@ function startSelfPing() {
         }).on('error', (err) => {
             addLog(`[Cron] Self-ping failed: ${err.message}`);
         });
+
+        // While we are at it, try to auto-start if not active
+        if (!forwarderActive && whatsappService.isReady && telegramService.isConnected) {
+            startForwarder().catch(e => console.error('Auto-start error:', e));
+        }
     }, INTERVAL);
 
     addLog(`[Cron] Self-ping enabled — pinging ${pingUrl} every 14 minutes`);
 }
+
+// ============ ROUTES CONTINUED ============
+
+// Manual Start Forwarder route (kept for UI compatibility)
+app.get('/start', async (req, res) => {
+    if (!forwarderActive) {
+        await startForwarder();
+    }
+    res.redirect('/');
+});
+
+// Health check endpoint (required for Render/Cron)
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime(),
+        whatsapp: whatsappService.isReady,
+        telegram: telegramService.isConnected,
+        forwarder: forwarderActive,
+    });
+});
 
 // ============ START SERVER ============
 app.listen(PORT, async () => {
@@ -298,7 +315,7 @@ app.listen(PORT, async () => {
         addLog(`WhatsApp auto-init error: ${err.message}`);
     });
 
-    // Initialize Telegram if ID/HASH are provide
+    // Initialize Telegram
     if (process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH) {
         telegramService.initialize(
             process.env.TELEGRAM_API_ID,
@@ -307,6 +324,15 @@ app.listen(PORT, async () => {
             addLog(`Telegram auto-init error: ${err.message}`);
         });
     }
+
+    // Auto-start check every 5 seconds until active
+    const autoStartInterval = setInterval(() => {
+        if (forwarderActive) {
+            clearInterval(autoStartInterval);
+        } else if (whatsappService.isReady && telegramService.isConnected) {
+            startForwarder().catch(e => console.error('Auto-start error:', e));
+        }
+    }, 5000);
 
     startSelfPing();
 });

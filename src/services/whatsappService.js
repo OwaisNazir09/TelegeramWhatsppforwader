@@ -98,13 +98,44 @@ class WhatsAppService {
         }
     }
 
-    async findGroupByName(groupName) {
+    async findGroupByName(groupName, retries = 3) {
+        if (!this.client) {
+            console.error('[WhatsApp] findGroupByName called but client is not initialized');
+            return null;
+        }
+
+        // Wait a bit if not ready, just in case
+        if (!this.isReady) {
+            console.log('[WhatsApp] Waiting for client to be ready before searching for group...');
+            for (let i = 0; i < 10; i++) {
+                if (this.isReady) break;
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+
+        if (!this.isReady) {
+            console.error('[WhatsApp] findGroupByName: Client still not ready after waiting.');
+            return null;
+        }
+
         try {
+            console.log(`[WhatsApp] Searching for group: "${groupName}"...`);
             const chats = await this.client.getChats();
             const group = chats.find(chat => chat.isGroup && chat.name === groupName);
+            
+            if (!group && retries > 0) {
+                console.log(`[WhatsApp] Group "${groupName}" not found. Retrying in 5s... (${retries} left)`);
+                await new Promise(r => setTimeout(r, 5000));
+                return this.findGroupByName(groupName, retries - 1);
+            }
+            
             return group;
         } catch (error) {
-            console.error('[WhatsApp] Error finding group:', error);
+            console.error(`[WhatsApp] Error finding group (Retries left: ${retries}):`, error.message);
+            if (retries > 0) {
+                await new Promise(r => setTimeout(r, 5000));
+                return this.findGroupByName(groupName, retries - 1);
+            }
             return null;
         }
     }

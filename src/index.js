@@ -285,9 +285,28 @@ function startSelfPing() {
 }
 
 // ============ START SERVER ============
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`\n🌐 Dashboard running at http://localhost:${PORT}`);
     console.log('Open this URL in your browser to set up WhatsApp & Telegram.\n');
     addLog('Server started');
+
+    // Auto-initialize services on startup
+    addLog('Auto-initializing services...');
+    
+    // Initialize WhatsApp
+    whatsappService.initialize().catch(err => {
+        addLog(`WhatsApp auto-init error: ${err.message}`);
+    });
+
+    // Initialize Telegram if ID/HASH are provide
+    if (process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH) {
+        telegramService.initialize(
+            process.env.TELEGRAM_API_ID,
+            process.env.TELEGRAM_API_HASH
+        ).catch(err => {
+            addLog(`Telegram auto-init error: ${err.message}`);
+        });
+    }
+
     startSelfPing();
 });

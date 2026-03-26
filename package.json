@@ -12,12 +12,14 @@
   "description": "",
   "dependencies": {
     "dotenv": "^17.3.1",
-    "express": "^5.2.1",
+    "express": "^4.22.1",
     "express-handlebars": "^8.0.6",
     "fs-extra": "^11.3.4",
     "lodash": "^4.17.23",
     "qrcode": "^1.5.4",
     "telegram": "^2.26.22",
-    "whatsapp-web.js": "^1.34.6"
+    "whatsapp-web.js": "^1.34.6",
+    "wwebjs-mongo": "^1.1.0",
+    "mongoose": "^8.0.0"
   }
 }

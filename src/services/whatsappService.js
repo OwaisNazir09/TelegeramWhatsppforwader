@@ -1,6 +1,9 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { Client, RemoteAuth, MessageMedia } = require('whatsapp-web.js');
+const { MongoStore } = require('wwebjs-mongo');
+const mongoose = require('mongoose');
 const qrcode = require('qrcode');
 const path = require('path');
+require('dotenv').config();
 
 class WhatsAppService {
     constructor() {
@@ -8,26 +11,18 @@ class WhatsAppService {
         this.isReady = false;
         this.latestQrDataUrl = null;
         this.initializing = false;
+        this.store = null;
     }
 
-    _createClient() {
-        this.client = new Client({
-            authStrategy: new LocalAuth(),
-            puppeteer: {
-                handleSIGINT: false,
-                executablePath: process.env.CHROME_PATH || undefined,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--single-process',
-                    '--disable-gpu'
-                ]
-            }
-        });
+    async _connectMongo() {
+        if (mongoose.connection.readyState === 1) return;
+        try {
+            await mongoose.connect(process.env.MONGODB_URI);
+            console.log('[WhatsApp] MongoDB connected successfully');
+        } catch (err) {
+            console.error('[WhatsApp] MongoDB connection error:', err.message);
+            throw err;
+        }
     }
 
     async initialize() {
@@ -35,39 +30,66 @@ class WhatsAppService {
         this.initializing = true;
         this.latestQrDataUrl = null;
 
-        this._createClient();
-
-        this.client.on('qr', async (qr) => {
-            console.log('[WhatsApp] New QR code generated');
-            try {
-                this.latestQrDataUrl = await qrcode.toDataURL(qr, {
-                    width: 280,
-                    margin: 2,
-                    color: { dark: '#000000', light: '#ffffff' }
-                });
-            } catch (err) {
-                console.error('[WhatsApp] QR generation error:', err.message);
-            }
-        });
-
-        this.client.on('ready', () => {
-            console.log('[WhatsApp] Client is ready!');
-            this.isReady = true;
-            this.latestQrDataUrl = null;
-            this.initializing = false;
-        });
-
-        this.client.on('auth_failure', (msg) => {
-            console.error('[WhatsApp] Authentication failure:', msg);
-        });
-
-        this.client.on('disconnected', (reason) => {
-            console.log('[WhatsApp] Disconnected:', reason);
-            this.isReady = false;
-            this.initializing = false;
-        });
-
         try {
+            await this._connectMongo();
+            this.store = new MongoStore({ mongoose: mongoose });
+
+            this.client = new Client({
+                authStrategy: new RemoteAuth({
+                    store: this.store,
+                    backupSyncIntervalMs: 300000,
+                    clientId: 'whatsapp-forwarder'
+                }),
+                puppeteer: {
+                    handleSIGINT: false,
+                    executablePath: process.env.CHROME_PATH || undefined,
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-gpu'
+                    ]
+                }
+            });
+
+            this.client.on('qr', async (qr) => {
+                console.log('[WhatsApp] New QR code generated');
+                try {
+                    this.latestQrDataUrl = await qrcode.toDataURL(qr, {
+                        width: 280,
+                        margin: 2,
+                        color: { dark: '#000000', light: '#ffffff' }
+                    });
+                } catch (err) {
+                    console.error('[WhatsApp] QR generation error:', err.message);
+                }
+            });
+
+            this.client.on('ready', () => {
+                console.log('[WhatsApp] Client is ready!');
+                this.isReady = true;
+                this.latestQrDataUrl = null;
+                this.initializing = false;
+            });
+
+            this.client.on('remote_session_saved', () => {
+                console.log('[WhatsApp] Session saved to remote storage');
+            });
+
+            this.client.on('auth_failure', (msg) => {
+                console.error('[WhatsApp] Authentication failure:', msg);
+            });
+
+            this.client.on('disconnected', (reason) => {
+                console.log('[WhatsApp] Disconnected:', reason);
+                this.isReady = false;
+                this.initializing = false;
+            });
+
             await this.client.initialize();
         } catch (err) {
             console.error('[WhatsApp] Failed to initialize:', err.message);
